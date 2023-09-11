@@ -1,4 +1,5 @@
 use clap::Parser;
+use random::LCGRandom;
 use std::fs::OpenOptions;
 use std::io::Write;
 
@@ -28,7 +29,11 @@ struct Args {
 
     /// File name
     #[arg(short, long, default_value = "random.txt")]
-    file_name: String,       
+    file_name: String,      
+
+    /// Find period of algorithm
+    #[arg(short, long, default_value = "false")]
+    period: String,  
 }
 
 fn main() {
@@ -46,5 +51,10 @@ fn main() {
 
         println!("{}", seed);
         file.write_all(format!("{}\n", seed).as_bytes()).expect("Failed to write into file.");
+    }
+
+    if args.period.eq_ignore_ascii_case("true") {
+        let period = LCGRandom::period(args.a, args.c, args.modulus, args.seed);
+        println!("Period: {}", period);
     }
 }
