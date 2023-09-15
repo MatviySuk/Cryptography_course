@@ -1,4 +1,5 @@
 use std::time::SystemTime;
+use random::LCGRandom;
 
 fn main() {
     let key_phrase = "lkasjdlkj1lkejlasdkj80asdlggkmlksad";
@@ -9,7 +10,7 @@ fn main() {
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("Failed to generate seed")
         .as_secs();
-    let iv = random::LCGRandom::new(1103515245, 12345, 2147483647, seed as i32).generate();
+    let iv = LCGRandom::new(1103515245, 12345, 2147483647, seed as u32).generate();
     println!("IV: {}", iv);
 
     let rc5 = rc5_algo::RC5_32::new(16, 8);
