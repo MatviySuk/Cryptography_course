@@ -9,23 +9,23 @@ use std::io::Write;
 struct Args {
     /// Multiplier value
     #[arg(short)]
-    a: i32,    
+    a: u32,    
 
     /// Seed or start value
     #[arg(short, long)]
-    seed: i32,
+    seed: u32,
 
     /// Modulus value
     #[arg(short, long)]
-    modulus: i32, 
+    modulus: u32, 
 
     /// Increment value
     #[arg(short)]
-    c: i32,
+    c: u32,
 
     /// File name
     #[arg(short, long, default_value_t = 10)]
-    iteration: i32,     
+    iteration: u32,     
 
     /// File name
     #[arg(short, long, default_value = "random.txt")]
