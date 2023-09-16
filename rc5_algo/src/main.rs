@@ -1,25 +1,71 @@
-use std::time::SystemTime;
 use random::LCGRandom;
+use std::time::SystemTime;
+
+use clap::Parser;
+use std::fs;
+
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Key phrase to encrypt or decrypt data
+    #[arg(short, long)]
+    key: String,
+
+    /// Encrypt = 0 or decrypt = 1 operation
+    #[arg(short, long)]
+    operation: u8,
+
+    /// File path to read data or cypher
+    #[arg(short, long)]
+    file_path: String,
+
+    /// File path to save operation result
+    #[arg(short, long, default_value = "rc5_result")]
+    save_path: String,
+
+    /// Number of rounds
+    #[arg(short, long, default_value_t = 16)]
+    rounds: u8,
+}
 
 fn main() {
-    let key_phrase = "lkasjdlkj1lkejlasdkj80asdlggkmlksad";
-    let pt = [0xEEu8, 0xDB, 0xA5, 0x21, 0x6D, 0x8F, 0xBB, 0x15];
+    let args = Args::parse();
+    let rc5_32 = rc5_algo::RC5_32::new(args.rounds, 8);
+    let key = &md5_algo::compute(args.key.as_bytes().to_vec()).0[8..];
+    let data = fs::read(args.file_path).expect("Unable to read data from file");
 
-    let key = &md5_algo::compute(key_phrase.as_bytes().to_vec()).0[8..];
-    let seed = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("Failed to generate seed")
-        .as_secs();
-    let iv = LCGRandom::new(1103515245, 12345, 2147483647, seed as u32).generate();
-    println!("IV: {}", iv);
+    match args.operation {
+        0 => {
+            let seed = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("Failed to generate seed")
+                .as_nanos();
+            let mut lcg_rand = LCGRandom::new(1103515245, 12345, 2147483647, seed as u32);
 
-    let rc5 = rc5_algo::RC5_32::new(16, 8);
-    let cypher = rc5.encrypt_ecb(&pt, key);
-    let decrypted = rc5.decrypt_ecb(cypher.0.as_slice(), key);
+            let iv: [u8; 8] =
+                ((lcg_rand.generate() as u64) | ((lcg_rand.generate() as u64) << 32)).to_le_bytes();
 
-    println!("Data:\t\t {:02X}", rc5_algo::Digest(pt.to_vec()));
-    println!("Cypher:\t\t {:02X}\n", cypher);
+            let cypher = rc5_32.encrypt_cbc_pad(&iv, &data, key);
 
-    println!("Data:\t\t {:02X}", rc5_algo::Digest(pt.to_vec()));
-    println!("Decrypted:\t {:02X}", decrypted);
+            fs::write(args.save_path, cypher.0).expect("Failed to cypher text to file");
+        }
+        1 => {
+            let decrypted = rc5_32.decrypt_cbc_pad(&data, key);
+            let n_last = decrypted.0.last().map_or(0, |&l| {
+                if decrypted.0[(decrypted.0.len() - l as usize)..]
+                    .iter()
+                    .all(|&e| e == l)
+                    && l <= 8
+                {
+                    return l;
+                }
+                0
+            }) as usize;
+
+            fs::write(args.save_path, &decrypted.0[..(decrypted.0.len() - n_last)])
+                .expect("Failed to save decryption result to file");
+        }
+        _ => unreachable!("Wrong operation code"),
+    }
 }

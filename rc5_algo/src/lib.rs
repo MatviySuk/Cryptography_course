@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, vec};
 pub struct Digest(pub Vec<u8>);
 
 pub struct RC5_32 {
@@ -41,12 +41,12 @@ impl fmt::Debug for Digest {
     }
 }
 
-impl From<Vec<u32>> for Digest {
-    fn from(value: Vec<u32>) -> Self {
+impl From<Vec<[u32; 2]>> for Digest {
+    fn from(value: Vec<[u32; 2]>) -> Self {
         Digest(
             value
                 .iter()
-                .flat_map(|v| v.to_le_bytes())
+                .flat_map(|v| [v[0].to_le_bytes(), v[1].to_le_bytes()].concat())
                 .collect::<Vec<u8>>(),
         )
     }
@@ -61,20 +61,54 @@ impl RC5_32 {
         }
     }
 
-    pub fn encrypt_cbc_pad(&self, pt: &[u8], k: &[u8]) -> Vec<u8> {
-        vec![]
-    }
-
-    pub fn decrypt_cbc_pad(&self, ct: &[u8], k: &[u8]) -> Vec<u8> {
-        vec![]
-    }
-
-    pub fn encrypt_ecb(&self, pt: &[u8], k: &[u8]) -> Digest {
+    pub fn encrypt_cbc_pad(&self, iv: &[u8; 8], pt: &[u8], k: &[u8]) -> Digest {
         let s = self.expanded_key(k);
-        let pt = pt
-            .chunks(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect::<Vec<u32>>();
+        let bb = 2 * self.w / 8;
+        let n = 8 - ((iv.len() + pt.len()) % bb);
+        let padding = vec![n as u8; n];
+
+        [iv, pt, &padding]
+            .concat()
+            .chunks(8)
+            .map(|c| {
+                [
+                    u32::from_le_bytes([c[4], c[5], c[6], c[7]]),
+                    u32::from_le_bytes([c[0], c[1], c[2], c[3]]),
+                ]
+            })
+            .scan([0u32; 2], |p, b| {
+                let cb = self.encrypt_ecb(&[p[0] ^ b[0], p[1] ^ b[1]], &s);
+                *p = cb;
+
+                Some(cb)
+            })
+            .collect::<Vec<[u32; 2]>>()
+            .into()
+    }
+
+    pub fn decrypt_cbc_pad(&self, ct: &[u8], k: &[u8]) -> Digest {
+        let s = self.expanded_key(k);
+
+        ct.chunks(8)
+            .map(|c| {
+                [
+                    u32::from_le_bytes([c[0], c[1], c[2], c[3]]),
+                    u32::from_le_bytes([c[4], c[5], c[6], c[7]]),
+                ]
+            })
+            .scan([0u32; 2], |p, b| {
+                let pt = self.decrypt_ecb(&b, &s);
+                let res = Some([p[1] ^ pt[1], p[0] ^ pt[0]]);
+                *p = b;
+
+                res
+            })
+            .skip(1)
+            .collect::<Vec<[u32; 2]>>()
+            .into()
+    }
+
+    fn encrypt_ecb(&self, pt: &[u32; 2], s: &[u32]) -> [u32; 2] {
         let mut a = pt[0].wrapping_add(s[0]);
         let mut b = pt[1].wrapping_add(s[1]);
 
@@ -83,15 +117,10 @@ impl RC5_32 {
             b = rotl!((b ^ a), a, self.w as u32).wrapping_add(s[2 * i + 1]);
         }
 
-        [a, b].to_vec().into()
+        [a, b]
     }
 
-    pub fn decrypt_ecb(&self, ct: &[u8], k: &[u8]) -> Digest {
-        let s = self.expanded_key(k);
-        let ct = ct
-            .chunks(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect::<Vec<u32>>();
+    fn decrypt_ecb(&self, ct: &[u32; 2], s: &[u32]) -> [u32; 2] {
         let mut b = ct[1];
         let mut a = ct[0];
 
@@ -100,10 +129,7 @@ impl RC5_32 {
             a = rotr!(a.wrapping_sub(s[2 * i]), b, self.w as u32) ^ b;
         }
 
-        b = b.wrapping_sub(s[1]);
-        a = a.wrapping_sub(s[0]);
-
-        [a, b].to_vec().into()
+        [a.wrapping_sub(s[0]), b.wrapping_sub(s[1])]
     }
 
     fn expanded_key(&self, k: &[u8]) -> Vec<u32> {
