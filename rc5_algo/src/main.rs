@@ -27,12 +27,25 @@ struct Args {
     /// Number of rounds
     #[arg(short, long, default_value_t = 16)]
     rounds: u8,
+
+    /// Number of octets in key
+     #[arg(short, long, default_value_t = 8)]
+    bytes_key: u8
 }
 
 fn main() {
     let args = Args::parse();
-    let rc5_32 = rc5_algo::RC5_32::new(args.rounds, 8);
-    let key = &md5_algo::compute(args.key.as_bytes().to_vec()).0[8..];
+    
+    let rc5_32 = rc5_algo::RC5_32::new(args.rounds, args.bytes_key);
+    let key_hash = md5_algo::compute(args.key.as_bytes().to_vec());
+
+    let key = match args.bytes_key {
+        8 => key_hash.0[8..].to_vec(),
+        16 => key_hash.0.to_vec(),
+        32 => [md5_algo::compute(key_hash.0.to_vec()).0, key_hash.0].concat(),
+        _ => unreachable!("Incorrect octets number in key"),   
+    };
+
     let data = fs::read(args.file_path).expect("Unable to read data from file");
 
     match args.operation {
@@ -46,24 +59,14 @@ fn main() {
             let iv: [u8; 8] =
                 ((lcg_rand.generate() as u64) | ((lcg_rand.generate() as u64) << 32)).to_le_bytes();
 
-            let cypher = rc5_32.encrypt_cbc_pad(&iv, &data, key);
+            let cypher = rc5_32.encrypt_cbc_pad(&iv, &data, &key);
 
             fs::write(args.save_path, cypher.0).expect("Failed to cypher text to file");
         }
         1 => {
-            let decrypted = rc5_32.decrypt_cbc_pad(&data, key);
-            let n_last = decrypted.0.last().map_or(0, |&l| {
-                if decrypted.0[(decrypted.0.len() - l as usize)..]
-                    .iter()
-                    .all(|&e| e == l)
-                    && l <= 8
-                {
-                    return l;
-                }
-                0
-            }) as usize;
+            let decrypted = rc5_32.decrypt_cbc_pad(&data, &key);
 
-            fs::write(args.save_path, &decrypted.0[..(decrypted.0.len() - n_last)])
+            fs::write(args.save_path, decrypted.0)
                 .expect("Failed to save decryption result to file");
         }
         _ => unreachable!("Wrong operation code"),
