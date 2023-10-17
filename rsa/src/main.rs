@@ -29,7 +29,10 @@ struct KeysArgs {
     /// Save path 
     #[arg(short, long, default_value = "")]
     save_path: String,
-}
+
+    #[arg(short, long, default_value_t = 2048)]
+    block_size: u32,
+}    
 
 #[derive(ValueEnum, Clone, Debug,)]
 enum KeyType {
@@ -62,7 +65,11 @@ fn main() {
     match cli.operation {
         Operation::Keys(args) => {
             // Generate an RSA key pair with 2048 bits
-            let rsa = Rsa::generate(2048)
+            if !(args.block_size != 0 && (args.block_size & (args.block_size - 1)) == 0) {
+                panic!("Block size should be 2 in power of n. Current value is: {}", args.block_size);
+            }
+
+            let rsa = Rsa::generate(args.block_size)
                 .expect("Failed to generate rsa keys!");
 
             // Extract the private key and public key
