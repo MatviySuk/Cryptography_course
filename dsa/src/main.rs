@@ -86,19 +86,27 @@ fn main() {
             let mut signer = Signer::new(MessageDigest::sha1(), &private_key)
                 .expect("Failed to create DSA signer!");
 
-            signer.update(&data).expect("Failed to pass data for verification!");
+            signer
+                .update(&data)
+                .expect("Failed to pass data for verification!");
 
-            let signature = signer
-                .sign_to_vec()
-                .expect("Failed to generate the signature!");
+            let signature = hex::encode(
+                signer
+                    .sign_to_vec()
+                    .expect("Failed to generate the signature!"),
+            );
 
             fs::write(args.signature_path, signature)
                 .expect("Failed to save data signature to file");
         }
         Operation::Verify(args) => {
             let data = fs::read(args.data_path).expect("Unable to read data from the file!");
-            let signature =
-                fs::read(args.signature_path).expect("Unable to read signature from the file!");
+            let signature = hex::decode(
+                fs::read_to_string(args.signature_path)
+                    .expect("Unable to read signature from the file!"),
+            )
+            .expect("Failed to decode hex string to bytes!");
+
             let pem_key_data = fs::read(args.keys_path).expect("Unable to read key from the file!");
 
             let public_key = PKey::public_key_from_pem(&pem_key_data)

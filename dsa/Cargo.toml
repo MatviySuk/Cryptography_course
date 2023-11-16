@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 openssl = "0.10.57"
 clap = { version = "4.4.6", features = ["derive"] }
+hex = "0.4.3"
